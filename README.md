@@ -35,29 +35,25 @@ Install required dependencies:
 
 ```bash
 pip3 install numpy pandas matplotlib seaborn statsmodels scikit-learn scipy
+
+pip3 install count_regressor
 ```
 
-Place `count_regressor.py` and `model_wrappers.py` in your project directory. Import as follows:
+importing count_regressor imports the following: 
+```python
+import count_regressor as cr
+```
 
 ```python
 from count_regressor import CountRegressor
 from model_wrappers import OLSWrapper, PoissonWrapper, NegBinWrapper
 ```
 
-If using a Jupyter notebook, enable autoreload so changes to `.py` files are reflected immediately:
-
-```python
-%load_ext autoreload
-%autoreload 2
-```
-
----
-
 ## Quick Start
 
 ```python
 # 1. Instantiate
-pipe = CountRegressor(X, y, min_train=200, retrain_every=50)
+pipe = cr.CountRegressor(X, y, min_train=200, retrain_every=50)
 
 # 2. Inspect your data
 pipe.info()
@@ -74,9 +70,9 @@ pipe.deactivate_features(['col_to_remove'])
 pipe.lasso_selection()
 
 # 5. Fit and evaluate
-pipe.fit(PoissonWrapper())
-pipe.walk_forward(PoissonWrapper())
-pipe.compare_models([OLSWrapper(), PoissonWrapper(), NegBinWrapper()])
+pipe.fit(cr.PoissonWrapper())
+pipe.walk_forward(cr.PoissonWrapper())
+pipe.compare_models([cr.OLSWrapper(), cr.PoissonWrapper(), cr.NegBinWrapper()])
 
 # 6. Predict on future data
 pipe.set_future_data(X_future, labels=['Event 1', 'Event 2'])
