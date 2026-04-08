@@ -34,7 +34,7 @@ The class is intentionally domain-agnostic. It works for any count outcome measu
 Install required dependencies:
 
 ```bash
-pip install numpy pandas matplotlib seaborn statsmodels scikit-learn scipy
+pip3 install numpy pandas matplotlib seaborn statsmodels scikit-learn scipy
 ```
 
 Place `count_regressor.py` and `model_wrappers.py` in your project directory. Import as follows:
