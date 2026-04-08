@@ -8,7 +8,7 @@
 
 `CountRegressor` is a self-contained Python class for fitting, evaluating, and predicting with count regression models on temporally ordered data. It is designed to be model-agnostic — any `ModelWrapper` subclass (OLS, Poisson, Negative Binomial, XGBoost, etc.) can be plugged in without changing any other part of the workflow.
 
-The class is intentionally domain-agnostic. It does not assume football, medical, or any other domain. It works for any count outcome measured repeatedly over time: goals, shots, admissions, events, transactions.
+The class is intentionally domain-agnostic. It works for any count outcome measured repeatedly over time. The class is designed for modelling and prediction on time based variables, and supports out of sample rolling regression backtests.
 
 ---
 
