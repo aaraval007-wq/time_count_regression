@@ -9,7 +9,7 @@ from sklearn.linear_model import LassoCV, PoissonRegressor
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import KFold
 
-from model_wrapper import ModelWrapper, OLSWrapper, PoissonWrapper, NegBinWrapper
+from count_regressor.model_wrapper import ModelWrapper, OLSWrapper, PoissonWrapper, NegBinWrapper
 
 class CountRegressor:
     def __init__(self, X, y, min_train, retrain_every):
