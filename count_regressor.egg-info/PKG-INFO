@@ -1,0 +1,391 @@
+Metadata-Version: 2.4
+Name: count-regressor
+Version: 0.1.0
+Summary: A general-purpose class for count-based time series regression
+Home-page: https://github.com/aaraval007-wq/time_count_regression
+Author: Aarav Agarwal
+Author-email: aaraval007@gmail.com
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: numpy
+Requires-Dist: pandas
+Requires-Dist: matplotlib
+Requires-Dist: seaborn
+Requires-Dist: statsmodels
+Requires-Dist: scikit-learn
+Requires-Dist: scipy
+Dynamic: author
+Dynamic: author-email
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: home-page
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# CountRegressor
+
+**A General-Purpose Class for Count-Based Time Series Regression**
+
+---
+
+## Overview
+
+`CountRegressor` is a self-contained Python class for fitting, evaluating, and predicting with count regression models on temporally ordered data. It is designed to be model-agnostic â€” any `ModelWrapper` subclass (OLS, Poisson, Negative Binomial, XGBoost, etc.) can be plugged in without changing any other part of the workflow.
+
+The class is intentionally domain-agnostic. It works for any count outcome measured repeatedly over time. The class is designed for modelling and prediction on time based variables, and supports out of sample rolling regression backtests.
+
+---
+
+## When to Use CountRegressor
+
+- Your target variable `y` is a non-negative integer (count)
+- Your observations are ordered in time (past to present)
+- You want to evaluate model performance using a walk-forward expanding window backtest
+- You want to compare multiple model types (OLS, Poisson, NB) on the same data and splits
+- You want a full probability distribution over counts as your output, not just a point estimate
+- You want to inspect features, check multicollinearity, and run feature selection before committing to a model
+
+## When NOT to Use CountRegressor
+
+- Your data is not temporally ordered (use standard cross-validation instead)
+- Your outcome is continuous, binary, or multinomial (not a count)
+- You only need a quick one-off regression without systematic evaluation
+
+---
+
+## Setup & Installation
+
+Install required dependencies:
+
+```bash
+pip3 install numpy pandas matplotlib seaborn statsmodels scikit-learn scipy
+```
+
+Place `count_regressor.py` and `model_wrappers.py` in your project directory. Import as follows:
+
+```python
+from count_regressor import CountRegressor
+from model_wrappers import OLSWrapper, PoissonWrapper, NegBinWrapper
+```
+
+If using a Jupyter notebook, enable autoreload so changes to `.py` files are reflected immediately:
+
+```python
+%load_ext autoreload
+%autoreload 2
+```
+
+---
+
+## Quick Start
+
+```python
+# 1. Instantiate
+pipe = CountRegressor(X, y, min_train=200, retrain_every=50)
+
+# 2. Inspect your data
+pipe.info()
+pipe.describe_y()
+pipe.describe_X()
+
+# 3. Diagnose features
+pipe.plot_distributions()
+pipe.vif()
+pipe.plot_correlations()
+
+# 4. Select features
+pipe.deactivate_features(['col_to_remove'])
+pipe.lasso_selection()
+
+# 5. Fit and evaluate
+pipe.fit(PoissonWrapper())
+pipe.walk_forward(PoissonWrapper())
+pipe.compare_models([OLSWrapper(), PoissonWrapper(), NegBinWrapper()])
+
+# 6. Predict on future data
+pipe.set_future_data(X_future, labels=['Event 1', 'Event 2'])
+pipe.predict_future()
+```
+
+---
+
+## Constructor
+
+```python
+CountRegressor(X, y, min_train, retrain_every)
+```
+
+| Parameter | Type | Description |
+|---|---|---|
+| `X` | `pd.DataFrame` | Feature matrix. All columns included initially. Rows must be ordered past to present. |
+| `y` | `pd.Series` | Target count variable. Must be non-negative integers. Same length as X. |
+| `min_train` | `int` | Minimum number of rows used in the first training window of the walk-forward backtest. |
+| `retrain_every` | `int` | Number of observations between model refits in the walk-forward backtest. |
+
+After instantiation, all columns in X are active by default. No constant term is added yet â€” that happens at `fit()` time.
+
+---
+
+## Method Reference
+
+### INSPECT
+
+Use immediately after instantiation to understand your data before modelling.
+
+| Method | Parameters | Description |
+|---|---|---|
+| `.info()` | None | Prints shape, active features, dtypes, min_train, retrain_every, and estimated walk-forward fold count. |
+| `.missing()` | None | Reports missing value counts and percentages for all active features and y. |
+| `.describe_y()` | None | Descriptive stats for y including mean, variance, dispersion ratio (var/mean), zero percentage, and histogram. Advises whether Poisson or NB is appropriate. |
+| `.describe_X()` | None | Descriptive stats for all active features. Numeric: mean, std, min, max, skew. Categorical: unique count and value frequencies. |
+| `.describe_temporal()` | None | Shows how observations are distributed across walk-forward folds. Prints exact train/test row ranges per fold. |
+
+---
+
+### FEATURE MANAGEMENT
+
+All modelling methods use only the active features. Deactivating a feature removes it from modelling without deleting it from X. The underlying data is never modified by activate/deactivate operations.
+
+| Method | Parameters | Description |
+|---|---|---|
+| `.activate_features(f)` | `str or list` | Add one or more features back into active_features. |
+| `.deactivate_features(f)` | `str or list` | Remove one or more features from active_features. |
+| `.set_active_features(features)` | `list` | Explicitly set active_features to a given list. Validates all names exist in X. |
+| `.reset_features()` | None | Restore active_features to all columns in X. |
+| `.add_feature(name, values)` | `str, array` | Add a new column to X and activate it immediately. |
+| `.transform_feature(name, func)` | `str, callable` | Apply a function to a column. Pass `new_name` to save as new column rather than overwriting. |
+| `.add_interaction(a, b)` | `str, str` | Create a product interaction term between two numeric columns and activate it. |
+| `.set_feature_dtype(f, dtype)` | `str/list, str` | Convert one or more features to a specified dtype. Supports `'category'`, `'int'`, `'float'`, `'str'`, `'bool'`. |
+
+Example â€” deactivate a feature, inspect VIF, then reactivate if needed:
+
+```python
+pipe.deactivate_features('prob_h')
+pipe.vif()
+pipe.activate_features('prob_h')
+```
+
+---
+
+### DIAGNOSE
+
+Feature diagnostics to check distributional properties, multicollinearity, and relationships with y.
+
+| Method | Parameters | Description |
+|---|---|---|
+| `.plot_distributions()` | None | Histograms for numeric features and bar charts for categorical features. Includes mean and median lines. |
+| `.plot_correlations(threshold)` | `float (default 0.7)` | Correlation heatmap for active numeric features. Flags pairs with `\|r\|` above threshold. |
+| `.vif(use_active_only)` | `bool (default True)` | VIF table for numeric features. Flags VIF > 5 (moderate) and VIF > 10 (serious). Pass `use_active_only=False` to run on all columns. |
+| `.plot_feature_vs_y()` | None | Scatter plots (numeric) and box plots (categorical) of each active feature against y. |
+| `.check_feature(name)` | `str` | Deep dive on a single feature: distribution, vs y plot, temporal plot, correlation with other active features, and VIF contribution. |
+
+---
+
+### FEATURE SELECTION
+
+These methods require a model to be fitted first via `.fit()`.
+
+| Method | Parameters | Description |
+|---|---|---|
+| `.partial_ftest(feature)` | `str` | Tests whether removing a feature significantly worsens model fit via LRT (GLMs) or F-test (OLS). Raises a warning for non-GLM models. |
+| `.aic_bic_comparison()` | None | Fits the model with and without each active feature. Reports Î”AIC and Î”BIC. Negative Î”AIC means dropping the feature improves fit. |
+| `.lasso_selection(cv, scale)` | `int, bool` | Fits LASSO to identify features surviving regularisation. Uses `LassoCV` for OLS, `PoissonRegressor` for Poisson. Falls back to OLS LASSO for NegBin with a warning. |
+| `.permutation_importance(n, metric)` | `int, str` | Model-agnostic importance. Shuffles each feature n times and measures MAE/RMSE degradation. Works for all model types. |
+
+Recommended selection workflow:
+
+1. Run `.vif()` and `.plot_correlations()` to identify multicollinearity
+2. Run `.partial_ftest()` on suspect features
+3. Run `.lasso_selection()` for a regularisation-based view
+4. Confirm with `.permutation_importance()` which features improve out-of-sample MAE
+5. Use `.deactivate_features()` to finalise the active set before fitting
+
+---
+
+### MODELLING
+
+All modelling methods accept any `ModelWrapper` subclass. The pipeline never calls statsmodels or sklearn directly.
+
+| Method | Parameters | Description |
+|---|---|---|
+| `.fit(model, add_constant)` | `ModelWrapper, bool` | Fits the model on the full active feature set. Stores the fitted model internally. `add_constant` defaults to `True`. |
+| `.summary()` | None | Prints the summary of the currently fitted model (coefficients, p-values, AIC, BIC, log-likelihood). |
+| `.walk_forward(model, ...)` | `ModelWrapper` | Runs the expanding window walk-forward backtest. Stores fold-level results keyed by model name. |
+| `.compare_models(models, ...)` | `list` | Compares multiple models. Reuses stored walk-forward results if available. Returns ranked comparison DataFrame. |
+
+#### Available ModelWrappers
+
+| Wrapper | Model | Notes |
+|---|---|---|
+| `OLSWrapper` | Ordinary Least Squares | Discretised Normal PMF for `predict_dist`. Use as baseline. |
+| `PoissonWrapper` | Poisson GLM | Poisson PMF. Best when variance â‰ˆ mean. |
+| `NegBinWrapper` | Negative Binomial GLM | NB PMF. Best when variance > mean (overdispersion). Estimates dispersion parameter alpha. |
+
+Walk-forward expanding window: every fold trains on all rows `0 â†’ test_start`, then tests on the next `retrain_every` rows. The training window grows with each fold.
+
+---
+
+### EVALUATE
+
+All evaluation methods use out-of-sample predictions from walk-forward results. `.fit()` and `.walk_forward()` must be called first.
+
+| Method | Parameters | Description |
+|---|---|---|
+| `.plot_walk_forward_mae(model)` | `ModelWrapper` | Plots fold-level MAE over time. Marks the mean MAE line. Reports best and worst fold. |
+| `.residual_plot(model)` | `ModelWrapper` | Residuals vs fitted values scatter and residual distribution histogram. |
+| `.dispersion_check(model)` | `ModelWrapper` | Pearson chiÂ² / df on out-of-sample predictions. Most meaningful for Poisson. |
+| `.plot_predicted_vs_actual(model)` | `ModelWrapper` | Scatter of predicted vs actual with 45-degree perfect prediction line. |
+| `.distribution_check(model)` | `ModelWrapper` | Overlays average predicted PMF against empirical distribution of actuals. |
+| `.temporal_stability(model)` | `ModelWrapper` | Plots coefficient trajectories across walk-forward folds. Warns for NegBin due to runtime. |
+
+---
+
+### DISTRIBUTE
+
+These methods generate full probability distributions over count outcomes. `.fit()` must be called first. Requires `set_future_data()` to have been called.
+
+| Method | Parameters | Description |
+|---|---|---|
+| `.predict_mean(add_constant)` | `bool/None` | Returns predicted mean count for each row in X_future. |
+| `.predict_pmf(max_k, ...)` | `int` | Returns full PMF array of shape `(n, max_k+1)`. Entry `[i, k]` = `P(Y=k \| X_future[i])`. |
+| `.plot_pmf(index, max_k, actual)` | `int/None` | Plots predicted PMF. If `index` is given, plots that single observation. If `None`, plots all in a grid. |
+
+The 80% credible interval shown in plots is computed from the 10th and 90th percentiles of the cumulative PMF.
+
+---
+
+### PREDICT
+
+Entry point for generating predictions on new, unseen data.
+
+| Method | Parameters | Description |
+|---|---|---|
+| `.set_future_data(X_future, labels)` | `DataFrame, list` | Stores future data for all PREDICT methods. Validates that X_future contains all active features. Extra columns are ignored. |
+| `.predict_future(max_k, ...)` | `int` | Runs predictions for all rows in X_future. Returns a summary DataFrame and the full PMF array. |
+
+After calling `predict_future()`, results are stored at `self._last_predictions`:
+
+```python
+summary_df, pmfs = pipe.predict_future()
+pmfs[0]                              # full PMF for first future observation
+pipe._last_predictions['summary']    # summary DataFrame
+```
+
+---
+
+## Internal State Reference
+
+| Attribute | Type | Description |
+|---|---|---|
+| `self.X` | `pd.DataFrame` | Full feature matrix. Never modified by activate/deactivate. |
+| `self.y` | `pd.Series` | Target variable. |
+| `self.active_features` | `list of str` | Currently active feature names used in all modelling methods. |
+| `self._fitted_model` | `ModelWrapper` | The last model fitted via `.fit()`. |
+| `self._wf_results` | `dict` | Walk-forward results keyed by model name. Each entry contains `fold_df`, `all_preds`, `all_actuals`, `metric`, `mean_score`. |
+| `self._X_future` | `pd.DataFrame` | Future data set via `.set_future_data()`. |
+| `self._labels` | `list of str` | Labels for future observations. |
+| `self._last_predictions` | `dict` | Most recent `predict_future()` output: summary DataFrame and pmfs array. |
+| `self._last_pmfs` | `np.array` | Cached PMFs from most recent `predict_pmf()` call. |
+
+---
+
+## ModelWrapper Interface
+
+Any model can be used with `CountRegressor` as long as it implements the `ModelWrapper` interface. To add a new model type, subclass `ModelWrapper` and implement the four required methods:
+
+```python
+from model_wrappers import ModelWrapper
+
+class XGBoostWrapper(ModelWrapper):
+    def __init__(self): ...
+    def fit(self, X_train, y_train): ...
+    def predict(self, X): ...
+    def predict_dist(self, X, max_k=60): ...
+    def get_summary(self): ...
+```
+
+`predict_dist` must return a `np.array` of shape `(n, max_k+1)` where entry `[i, k]` = `P(Y=k | X_i)`.
+
+---
+
+## Design Principles
+
+**`active_features` as the single source of truth** â€” every method that touches the model uses `self.X[self.active_features]`, never `self.X` directly. Deactivating a feature immediately affects all downstream operations without needing to pass anything explicitly.
+
+**Walk-forward results are cached by model name** â€” `compare_models` reuses stored walk-forward results rather than refitting. Results are overwritten if you call `walk_forward` on the same model again.
+
+**Out-of-sample only for evaluation** â€” all EVALUATE methods use out-of-sample predictions from walk-forward results, never in-sample fitted values.
+
+**`set_future_data` once, use everywhere** â€” `X_future` and labels are stored on the instance. All PREDICT and DISTRIBUTE methods use this stored data automatically.
+
+**Domain-agnostic** â€” `CountRegressor` contains no domain-specific logic. All domain-specific operations belong in a subclass or a separate class that consumes `CountRegressor` outputs.
+
+---
+
+## Full Example Workflow
+
+```python
+from count_regressor import CountRegressor
+from model_wrappers import OLSWrapper, PoissonWrapper, NegBinWrapper
+
+# Instantiate
+pipe = CountRegressor(X, y, min_train=200, retrain_every=50)
+
+# Inspect
+pipe.info()
+pipe.describe_y()           # check dispersion ratio
+pipe.describe_temporal()    # verify fold structure
+
+# Diagnose
+pipe.plot_distributions()
+pipe.vif()                  # check multicollinearity
+pipe.plot_correlations()
+
+# Manage features
+pipe.set_feature_dtype('league', 'category')
+pipe.deactivate_features('league')   # exclude from modelling
+
+# Select features
+pipe.fit(PoissonWrapper())
+pipe.partial_ftest('feature_name')
+pipe.lasso_selection()
+pipe.permutation_importance()
+
+# Walk-forward evaluation
+pipe.walk_forward(OLSWrapper())
+pipe.walk_forward(PoissonWrapper())
+pipe.walk_forward(NegBinWrapper())
+pipe.compare_models([OLSWrapper(), PoissonWrapper(), NegBinWrapper()])
+
+# Evaluate best model
+pipe.plot_walk_forward_mae(PoissonWrapper())
+pipe.residual_plot(PoissonWrapper())
+pipe.dispersion_check(PoissonWrapper())
+pipe.distribution_check(PoissonWrapper())
+pipe.temporal_stability(PoissonWrapper())
+
+# Predict on future data
+pipe.set_future_data(X_future, labels=['Event A', 'Event B'])
+pipe.predict_future()
+pipe.plot_pmf()             # grid of all future PMFs
+pipe.plot_pmf(index=0)      # single PMF
+```
+
+---
+
+## File Structure
+
+```
+count_regressor/
+â”œâ”€â”€ count_regressor.py       # CountRegressor class
+â”œâ”€â”€ model_wrappers.py        # ModelWrapper base + OLS, Poisson, NegBin subclasses
+â”œâ”€â”€ README.md
+â”œâ”€â”€ requirements.txt
+â””â”€â”€ examples/
+    â””â”€â”€ example_walkthrough.ipynb
+```
+
+---
+
+*CountRegressor â€” General-Purpose Count Regression Pipeline*
